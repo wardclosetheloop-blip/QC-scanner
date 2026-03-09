@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Kwaliteitscontrole Scanner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg: #f0ece4;
+  --surface: #ffffff;
+  --card: #faf8f4;
+  --border: #ddd8cc;
+  --text: #1a1814;
+  --muted: #8a8478;
+  --accent: #1a1814;
+  --ok: #1a6b3c;
+  --ok-bg: #e8f5ee;
+  --ok-light: #c3e8d2;
+  --err: #b81c2e;
+  --err-bg: #fdecea;
+  --err-light: #f5b8bf;
+  --warn: #c47c00;
+  --warn-bg: #fef8ec;
+  --industrial: #e8640a;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── HEADER ─── */
+header {
+  background: var(--accent);
+  color: white;
+  padding: 0 20px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-left { display: flex; align-items: center; gap: 12px; }
+
+.header-badge {
+  background: var(--industrial);
+  color: white;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+header h1 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.product-count {
+  background: rgba(255,255,255,0.15);
+  font-size: 12px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+}
+
+/* ─── TABS ─── */
+.tabs {
+  display: flex;
+  background: var(--accent);
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding: 0 20px;
+  gap: 4px;
+}
+
+.tab {
+  padding: 10px 16px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.5);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab.active { color: white; border-bottom-color: var(--industrial); }
+
+/* ─── PAGES ─── */
+.page { display: none; flex: 1; flex-direction: column; }
+.page.active { display: flex; }
+
+/* ─── SCANNER PAGE ─── */
+.scanner-page { padding: 16px; gap: 14px; }
+
+/* Setup warning */
+.setup-warning {
+  background: var(--warn-bg);
+  border: 2px solid var(--warn);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--warn);
+}
+
+.setup-warning svg { flex-shrink: 0; }
+
+/* Camera */
+.camera-wrap {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #111;
+  aspect-ratio: 4/3;
+  border: 2px solid var(--border);
+}
+
+#video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Aim overlay */
+.aim-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+
+.aim-box {
+  width: 75%;
+  height: 40%;
+  border: 2px solid rgba(255,255,255,0.7);
+  border-radius: 6px;
+  position: relative;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.35);
+}
+
+/* Horizontal laser line */
+.laser {
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent 0%, var(--industrial) 20%, #ff9a00 50%, var(--industrial) 80%, transparent 100%);
+  box-shadow: 0 0 10px rgba(232,100,10,0.9), 0 0 20px rgba(232,100,10,0.5);
+  top: 50%;
+  animation: laserPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes laserPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Corner marks */
+.aim-box::before, .aim-box::after,
+.aim-box .c3, .aim-box .c4 {
+  content: '';
+  position: absolute;
+  width: 20px; height: 20px;
+  border-color: var(--industrial);
+  border-style: solid;
+}
+.aim-box::before  { top: -2px; left: -2px; border-width: 3px 0 0 3px; }
+.aim-box::after   { top: -2px; right: -2px; border-width: 3px 3px 0 0; }
+.aim-box .c3      { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; }
+.aim-box .c4      { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; }
+
+/* Aim hint text */
+.aim-hint {
+  position: absolute;
+  bottom: 10px; left: 0; right: 0;
+  text-align: center;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: rgba(255,255,255,0.8);
+  text-transform: uppercase;
+}
+
+/* Camera off placeholder */
+.camera-error {
+  position: absolute; inset: 0;
+  background: rgba(184,28,46,0.95);
+  color: white;
+  font-size: 14px;
+  line-height: 1.7;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  z-index: 20;
+}
+
+.cam-placeholder {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px;
+  color: rgba(255,255,255,0.4);
+  font-size: 13px;
+  font-family: 'Barlow Condensed', sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* Flash */
+.flash-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.05s;
+}
+.flash-overlay.ok  { background: rgba(26,107,60,0.5); }
+.flash-overlay.err { background: rgba(184,28,46,0.5); }
+.flash-overlay.show { opacity: 1; }
+
+/* Scan button */
+.btn-scan {
+  width: 100%;
+  padding: 17px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  transition: all 0.15s;
+}
+
+.btn-scan:active { transform: scale(0.98); }
+.btn-scan.running { background: var(--err); }
+
+/* ─── RESULT PANEL ─── */
+.result-panel {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  transition: border-color 0.3s;
+}
+
+.result-panel.ok  { border-color: var(--ok); }
+.result-panel.err { border-color: var(--err); }
+
+.result-header {
+  padding: 12px 16px;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.result-panel.ok  .result-header { background: var(--ok-bg); color: var(--ok); }
+.result-panel.err .result-header { background: var(--err-bg); color: var(--err); }
+
+.result-status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.result-panel.ok  .result-status-dot { background: var(--ok); }
+.result-panel.err .result-status-dot { background: var(--err); animation: blink 0.8s step-end 3; }
+
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+.result-body { padding: 16px; background: var(--surface); }
+
+.result-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 10px;
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+.result-row:last-child { border-bottom: none; padding-bottom: 0; }
+
+.result-row-label {
+  font-size: 11px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.result-row-value {
+  font-size: 16px;
+  font-weight: 600;
+  text-align: right;
+  word-break: break-word;
+}
+
+.result-row-value.big {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.result-row-value.location {
+  color: var(--industrial);
+  font-weight: 700;
+}
+
+/* ─── SETUP PAGE ─── */
+.setup-page {
+  padding: 20px;
+  gap: 20px;
+  overflow-y: auto;
+}
+
+.section-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+/* Upload zone */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--surface);
+}
+
+.upload-zone:hover, .upload-zone.drag { border-color: var(--industrial); background: var(--warn-bg); }
+
+.upload-zone svg { color: var(--muted); margin-bottom: 10px; }
+.upload-zone p { font-size: 15px; font-weight: 500; color: var(--text); }
+.upload-zone small { font-size: 12px; color: var(--muted); display: block; margin-top: 4px; }
+#fileInput { display: none; }
+
+/* Format hint */
+.format-hint {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.format-hint strong { color: var(--text); font-weight: 600; }
+.format-hint code {
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--industrial);
+}
+
+/* Product table */
+.product-table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead { background: var(--accent); color: white; }
+th {
+  padding: 10px 12px;
+  text-align: left;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+tr:nth-child(even) td { background: var(--card); }
+.barcode-cell { font-family: monospace; font-size: 12px; color: var(--muted); }
+.type-pill {
+  display: inline-block;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.location-cell { color: var(--industrial); font-weight: 600; }
+
+.btn-clear-products {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1.5px solid var(--err);
+  background: none;
+  color: var(--err);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-clear-products:hover { background: var(--err-bg); }
+
+/* ─── LOG PAGE ─── */
+.log-page { padding: 16px; gap: 12px; overflow-y: auto; }
+
+.log-controls { display: flex; gap: 8px; align-items: center; }
+
+.log-filter {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font-size: 14px;
+  font-family: 'Barlow', sans-serif;
+  color: var(--text);
+  outline: none;
+}
+.log-filter:focus { border-color: var(--accent); }
+
+.btn-export {
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1.5px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+.btn-export:hover { opacity: 0.85; }
+
+.log-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.stat-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+.stat-num {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-top: 3px;
+}
+.stat-box.total .stat-num { color: var(--text); }
+.stat-box.ok .stat-num    { color: var(--ok); }
+.stat-box.err .stat-num   { color: var(--err); }
+
+.log-list { display: flex; flex-direction: column; gap: 6px; }
+
+.log-empty {
+  text-align: center; color: var(--muted);
+  font-size: 14px; padding: 40px 20px;
+  background: var(--surface);
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+}
+
+.log-item {
+  background: var(--surface);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px;
+}
+
+.log-item.ok  { border-left-color: var(--ok); }
+.log-item.err { border-left-color: var(--err); }
+
+.log-icon { flex-shrink: 0; }
+.log-content { flex: 1; min-width: 0; }
+
+.log-main {
+  font-size: 14px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.log-sub {
+  font-size: 11px; color: var(--muted); margin-top: 2px;
+  font-family: 'Barlow Condensed', sans-serif;
+  letter-spacing: 0.5px;
+}
+
+.log-time {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 12px; color: var(--muted);
+  flex-shrink: 0;
+}
+
+canvas { display: none; }
+
+/* ─── TOAST ─── */
+.toast {
+  position: fixed; bottom: 24px; left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--accent); color: white;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 15px; font-weight: 700; letter-spacing: 1px;
+  padding: 10px 22px; border-radius: 30px;
+  transition: transform 0.3s ease;
+  z-index: 999; white-space: nowrap;
+  pointer-events: none;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="header-badge">QC</div>
+    <h1>Kwaliteitscontrole</h1>
+  </div>
+  <div class="product-count" id="productCountBadge">0 producten</div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="showPage('scanner')">▶ Scanner</button>
+  <button class="tab" onclick="showPage('setup')">⚙ Producten</button>
+  <button class="tab" onclick="showPage('log')">📋 Log</button>
+</div>
+
+<!-- ══ SCANNER PAGE ══ -->
+<div class="page scanner-page active" id="page-scanner">
+
+  <div class="setup-warning" id="setupWarning">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    Laad eerst een productlijst via het tabblad <strong>&nbsp;Producten</strong>.
+  </div>
+
+  <div class="camera-wrap">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="canvas"></canvas>
+
+    <div class="aim-overlay" id="aimOverlay">
+      <div class="aim-box">
+        <div class="laser"></div>
+        <div class="c3"></div><div class="c4"></div>
+      </div>
+      <div class="aim-hint">Richt op barcode</div>
+    </div>
+
+    <div class="camera-error" id="cameraError" style="display:none"></div>
+    <div class="cam-placeholder" id="camPlaceholder">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+      Camera uitgeschakeld
+    </div>
+
+    <div class="flash-overlay" id="flashOverlay"></div>
+  </div>
+
+  <button class="btn-scan" id="scanBtn" onclick="toggleScan()">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+    Start scannen
+  </button>
+
+  <!-- Result panel -->
+  <div class="result-panel" id="resultPanel">
+    <div class="result-header">
+      <div class="result-status-dot"></div>
+      <span id="resultHeaderText">Wachten op scan…</span>
+    </div>
+    <div class="result-body">
+      <div class="result-empty" id="resultEmpty">Scan een product om de informatie te zien.</div>
+      <div id="resultRows" style="display:none">
+        <div class="result-row">
+          <div class="result-row-label">Barcode</div>
+          <div class="result-row-value big" id="rBarcode">—</div>
+        </div>
+        <div class="result-row">
+          <div class="result-row-label">Producttype</div>
+          <div class="result-row-value" id="rType">—</div>
+        </div>
+        <div class="result-row">
+          <div class="result-row-label">Verpakkingslocatie</div>
+          <div class="result-row-value location" id="rLocation">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ SETUP PAGE ══ -->
+<div class="page setup-page" id="page-setup">
+
+  <div>
+    <div class="section-title">Productlijst uploaden</div>
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()"
+         ondragover="event.preventDefault();this.classList.add('drag')"
+         ondragleave="this.classList.remove('drag')"
+         ondrop="handleDrop(event)">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <p>Klik om bestand te kiezen</p>
+      <small>CSV of Excel (.xlsx / .xls) — sleep ook mogelijk</small>
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" onchange="handleFile(this.files[0])">
+    </div>
+  </div>
+
+  <div class="format-hint">
+    <strong>Vereiste kolomnamen</strong> (volgorde maakt niet uit):<br>
+    <code>barcode</code> &nbsp;·&nbsp; <code>producttype</code> &nbsp;·&nbsp; <code>verpakkingslocatie</code><br><br>
+    Eerste rij = koptekst. Overige kolommen worden genegeerd.
+  </div>
+
+  <div id="productTableSection" style="display:none">
+    <div class="section-title" style="margin-bottom:10px">Geladen producten</div>
+    <div class="product-table-wrap">
+      <table>
+        <thead><tr><th>Barcode</th><th>Producttype</th><th>Locatie</th></tr></thead>
+        <tbody id="productTbody"></tbody>
+      </table>
+    </div>
+    <button class="btn-clear-products" onclick="clearProducts()" style="margin-top:10px">Lijst wissen</button>
+  </div>
+
+</div>
+
+<!-- ══ LOG PAGE ══ -->
+<div class="page log-page" id="page-log">
+
+  <div class="log-stats">
+    <div class="stat-box total"><div class="stat-num" id="statTotal">0</div><div class="stat-label">Totaal</div></div>
+    <div class="stat-box ok"><div class="stat-num" id="statOk">0</div><div class="stat-label">Herkend</div></div>
+    <div class="stat-box err"><div class="stat-num" id="statErr">0</div><div class="stat-label">Onbekend</div></div>
+  </div>
+
+  <div class="log-controls">
+    <input class="log-filter" type="search" placeholder="Zoeken in log…" oninput="renderLog(this.value)">
+    <button class="btn-export" onclick="exportLog()">↓ Export</button>
+  </div>
+
+  <div class="log-list" id="logList">
+    <div class="log-empty">Nog geen scans geregistreerd.</div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──
+let products = {};      // barcode → {type, location}
+let scanLog  = [];
+let scanning = false;
+let stream   = null;
+let animId   = null;
+let cooldown = false;
+let lastCode = '';
+let barcodeDetector = null;
+let useBarcodeAPI   = false;
+
+// ── Init ──
+(async () => {
+  if ('BarcodeDetector' in window) {
+    try {
+      const supported = await BarcodeDetector.getSupportedFormats();
+      barcodeDetector = new BarcodeDetector({ formats: supported });
+      useBarcodeAPI = true;
+      console.log('✓ Native BarcodeDetector actief', supported);
+    } catch(e) { console.warn('BarcodeDetector init failed', e); }
+  }
+  if (!useBarcodeAPI) {
+    console.log('Fallback: jsQR zal worden geladen');
+    loadJsQR();
+  }
+})();
+
+function loadJsQR() {
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js';
+  document.head.appendChild(s);
+}
+
+// ── Page navigation ──
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'log') renderLog();
+}
+
+// ── Camera ──
+async function toggleScan() {
+  if (scanning) stopScan();
+  else await startScan();
+}
+
+async function startScan() {
+  // Check if getUserMedia is available at all
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showCameraError('Camera API niet beschikbaar in deze browser.<br><br>Gebruik <b>Chrome</b> en open via <b>http://</b> (niet file://).');
+    return;
+  }
+
+  // Try progressively simpler camera constraints
+  const attempts = [
+    { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } },
+    { video: { facingMode: 'environment' } },
+    { video: { facingMode: 'user' } },
+    { video: true }
+  ];
+
+  let lastError = null;
+  for (const constraints of attempts) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      // Success!
+      const video = document.getElementById('video');
+      video.srcObject = stream;
+      await video.play();
+      scanning = true;
+      document.getElementById('camPlaceholder').style.display = 'none';
+      document.getElementById('cameraError').style.display = 'none';
+      document.getElementById('scanBtn').classList.add('running');
+      document.getElementById('scanBtn').innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stoppen`;
+      scanLoop();
+      return;
+    } catch(e) {
+      lastError = e;
+      console.warn('Camera poging mislukt:', JSON.stringify(constraints), e.name, e.message);
+    }
+  }
+
+  // All attempts failed — show diagnostic
+  let msg = '❌ Camera kon niet worden gestart.<br><br>';
+  if (lastError) {
+    if (lastError.name === 'NotAllowedError' || lastError.name === 'PermissionDeniedError') {
+      msg += '<b>Toestemming geweigerd.</b><br>Ga naar Chrome → adresbalk → slotje → Machtigingen → Camera → Toestaan. Herlaad daarna de pagina.';
+    } else if (lastError.name === 'NotFoundError' || lastError.name === 'DevicesNotFoundError') {
+      msg += '<b>Geen camera gevonden</b> op dit apparaat.';
+    } else if (lastError.name === 'NotReadableError' || lastError.name === 'TrackStartError') {
+      msg += '<b>Camera is bezet</b> door een andere app. Sluit andere apps die de camera gebruiken en probeer opnieuw.';
+    } else if (lastError.name === 'OverconstrainedError') {
+      msg += '<b>Camera voldoet niet aan de eisen.</b> Probeer de pagina te herladen.';
+    } else if (lastError.name === 'SecurityError') {
+      msg += '<b>Beveiligingsfout.</b> Zorg dat de pagina via <b>http://</b> geopend is (niet via file://).';
+    } else {
+      msg += `Foutcode: <b>${lastError.name}</b><br><small>${lastError.message}</small>`;
+    }
+  }
+  showCameraError(msg);
+}
+
+function showCameraError(msg) {
+  const el = document.getElementById('cameraError');
+  el.innerHTML = msg;
+  el.style.display = 'flex';
+}
+
+function stopScan() {
+  scanning = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  cancelAnimationFrame(animId);
+  document.getElementById('camPlaceholder').style.display = 'flex';
+  document.getElementById('cameraError').style.display = 'none';
+  document.getElementById('scanBtn').classList.remove('running');
+  document.getElementById('scanBtn').innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> Start scannen`;
+}
+
+async function scanLoop() {
+  if (!scanning) return;
+  const video  = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx    = canvas.getContext('2d');
+
+  if (video.readyState >= 2) {
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+
+    let code = null;
+
+    if (useBarcodeAPI && barcodeDetector) {
+      try {
+        const results = await barcodeDetector.detect(video);
+        if (results.length > 0) code = results[0].rawValue;
+      } catch(e) {}
+    } else if (typeof jsQR !== 'undefined') {
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const res = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+      if (res) code = res.data;
+    }
+
+    if (code && code !== lastCode && !cooldown) {
+      onDetected(code);
+    }
+  }
+
+  animId = requestAnimationFrame(scanLoop);
+}
+
+// ── On detect ──
+function onDetected(code) {
+  lastCode = code;
+  cooldown = true;
+  setTimeout(() => { cooldown = false; lastCode = ''; }, 2500);
+
+  const product = products[String(code).trim()];
+  const found   = !!product;
+
+  // Flash
+  const f = document.getElementById('flashOverlay');
+  f.className = 'flash-overlay ' + (found ? 'ok' : 'err');
+  f.classList.add('show');
+  setTimeout(() => f.classList.remove('show'), 200);
+
+  // Result panel
+  const panel = document.getElementById('resultPanel');
+  panel.className = 'result-panel ' + (found ? 'ok' : 'err');
+  document.getElementById('resultHeaderText').textContent = found ? '✓ Product herkend' : '✗ Onbekende barcode';
+  document.getElementById('resultEmpty').style.display = 'none';
+  document.getElementById('resultRows').style.display  = 'block';
+  document.getElementById('rBarcode').textContent   = code;
+  document.getElementById('rType').textContent      = found ? product.type     : '— Niet gevonden —';
+  document.getElementById('rLocation').textContent  = found ? product.location : '—';
+  document.getElementById('rLocation').style.color  = found ? 'var(--industrial)' : 'var(--err)';
+
+  // Log
+  const entry = {
+    code,
+    found,
+    type:     found ? product.type     : null,
+    location: found ? product.location : null,
+    time:     new Date()
+  };
+  scanLog.unshift(entry);
+  updateStats();
+}
+
+// ── Product list ──
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'csv') readCSV(file);
+  else readExcel(file);
+}
+
+function readCSV(file) {
+  Papa.parse(file, {
+    header: true, skipEmptyLines: true,
+    complete: r => loadProducts(r.data),
+    error: e => showToast('❌ CSV fout: ' + e.message)
+  });
+}
+
+function readExcel(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, { type: 'binary' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      loadProducts(data);
+    } catch(err) { showToast('❌ Excel fout: ' + err.message); }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function loadProducts(rows) {
+  const map = {};
+  let ok = 0, bad = 0;
+
+  rows.forEach(row => {
+    // case-insensitive key matching
+    const keys = Object.keys(row);
+    const get = name => {
+      const k = keys.find(k => k.trim().toLowerCase() === name);
+      return k ? String(row[k]).trim() : '';
+    };
+
+    const barcode  = get('barcode');
+    const type     = get('producttype');
+    const location = get('verpakkingslocatie');
+
+    if (barcode) {
+      map[barcode] = { type: type || '—', location: location || '—' };
+      ok++;
+    } else { bad++; }
+  });
+
+  if (ok === 0) {
+    showToast('❌ Geen geldige producten gevonden. Controleer kolomnamen.');
+    return;
+  }
+
+  products = map;
+  renderProductTable();
+  updateProductCount();
+  document.getElementById('setupWarning').style.display = 'none';
+  showToast(`✓ ${ok} producten geladen${bad ? ` (${bad} overgeslagen)` : ''}`);
+}
+
+function renderProductTable() {
+  const tbody = document.getElementById('productTbody');
+  tbody.innerHTML = Object.entries(products).map(([bc, p]) => `
+    <tr>
+      <td class="barcode-cell">${esc(bc)}</td>
+      <td><span class="type-pill">${esc(p.type)}</span></td>
+      <td class="location-cell">${esc(p.location)}</td>
+    </tr>
+  `).join('');
+  document.getElementById('productTableSection').style.display = 'block';
+}
+
+function clearProducts() {
+  products = {};
+  document.getElementById('productTbody').innerHTML = '';
+  document.getElementById('productTableSection').style.display = 'none';
+  document.getElementById('setupWarning').style.display = 'flex';
+  updateProductCount();
+  showToast('Lijst gewist');
+}
+
+function updateProductCount() {
+  const n = Object.keys(products).length;
+  document.getElementById('productCountBadge').textContent = n + ' product' + (n !== 1 ? 'en' : '');
+}
+
+// ── Log ──
+function renderLog(filter) {
+  filter = (filter || '').toLowerCase();
+  const list = document.getElementById('logList');
+
+  const filtered = filter
+    ? scanLog.filter(e => e.code.toLowerCase().includes(filter) ||
+        (e.type     && e.type.toLowerCase().includes(filter)) ||
+        (e.location && e.location.toLowerCase().includes(filter)))
+    : scanLog;
+
+  if (!filtered.length) {
+    list.innerHTML = `<div class="log-empty">${filter ? 'Geen resultaten.' : 'Nog geen scans geregistreerd.'}</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(e => `
+    <div class="log-item ${e.found ? 'ok' : 'err'}">
+      <div class="log-icon">
+        ${e.found
+          ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`
+          : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--err)" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`}
+      </div>
+      <div class="log-content">
+        <div class="log-main">${e.found ? esc(e.type) : 'Onbekende barcode'}</div>
+        <div class="log-sub">${esc(e.code)}${e.found ? ' · ' + esc(e.location) : ''}</div>
+      </div>
+      <div class="log-time">${formatTime(e.time)}</div>
+    </div>
+  `).join('');
+}
+
+function updateStats() {
+  const ok  = scanLog.filter(e => e.found).length;
+  const err = scanLog.filter(e => !e.found).length;
+  document.getElementById('statTotal').textContent = scanLog.length;
+  document.getElementById('statOk').textContent    = ok;
+  document.getElementById('statErr').textContent   = err;
+  renderLog(document.querySelector('.log-filter')?.value);
+}
+
+function exportLog() {
+  if (!scanLog.length) { showToast('Geen data om te exporteren'); return; }
+  const rows = [['Tijdstip','Barcode','Herkend','Producttype','Verpakkingslocatie']];
+  scanLog.forEach(e => rows.push([
+    formatTime(e.time), e.code,
+    e.found ? 'Ja' : 'Nee',
+    e.type     || '',
+    e.location || ''
+  ]));
+  const csv  = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'scan-log-' + dateStr() + '.csv';
+  a.click(); URL.revokeObjectURL(url);
+  showToast('✓ Log geëxporteerd');
+}
+
+// ── Helpers ──
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function formatTime(d) {
+  return d.toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+
+function dateStr() {
+  const d = new Date();
+  return d.toISOString().slice(0,10);
+}
+
+let _toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+</script>
+</body>
+</html>
